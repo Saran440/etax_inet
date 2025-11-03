@@ -211,6 +211,14 @@ def prepare_data(d, ft, fm, pdf):
     line_total = round(line_total, 2)
     base_total = round(base_total, 2)
     tax_total = round(tax_total, 2)
+
+    # Total down payment
+    down_payment_amount = sum(
+        line.get("l22_line_basis_amount", 0) for line in lines if line.get("l22_line_basis_amount", 0) < 0
+    )
+    # filter out negative l22_line_basis_amount from lines
+    lines = [line for line in lines if line["l22_line_basis_amount"] >= 0]
+
     # --
     footer = {
         "f01_line_total_count": len(lines),
@@ -259,7 +267,7 @@ def prepare_data(d, ft, fm, pdf):
         "f39_line_total_currency_code": currency_code or "",
         "f40_adjusted_information_amount": round(d["adjust_amount_untaxed"], 2) or 0.00,   # doc._get_additional_amount()[2],
         "f41_adjusted_information_currency_code": currency_code or "",
-        "f42_allowance_total_amount": "",
+        "f42_allowance_total_amount": round(down_payment_amount, 2) or 0.00, # In case of down payment
         "f43_allowance_total_currency_code": currency_code or "",
         "f44_charge_total_amount": "",
         "f45_charge_total_currency_code": currency_code or "",
