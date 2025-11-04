@@ -213,9 +213,9 @@ def prepare_data(d, ft, fm, pdf):
     tax_total = round(tax_total, 2)
 
     # Total down payment
-    down_payment_amount = sum(
+    down_payment_amount = abs(sum(
         line.get("l22_line_basis_amount", 0) for line in lines if line.get("l22_line_basis_amount", 0) < 0
-    )
+    ))
     # filter out negative l22_line_basis_amount from lines
     lines = [line for line in lines if line["l22_line_basis_amount"] >= 0]
 
