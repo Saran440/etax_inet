@@ -152,7 +152,7 @@ def prepare_data(d, ft, fm, pdf):
                 # and (line.price_total - line.price_subtotal)
                 # or 0.00,
                 "l25_line_tax_cal_currency_code": currency_code or "",
-                "l26_line_allowance_charge_ind": "",
+                "l26_line_allowance_charge_ind": l.get("line_allowance_charge_ind", ""),
                 "l27_line_allowance_actual_amount": round(l.get("line_allowance_actual_amount", 0.00), 2) or 0.00,
                 "l28_line_allowance_actual_currency_code": currency_code or "",
                 "l29_line_allowance_reason_code": "",
@@ -212,12 +212,21 @@ def prepare_data(d, ft, fm, pdf):
     base_total = round(base_total, 2)
     tax_total = round(tax_total, 2)
 
-    # Total down payment
+    # Explicit line allowances already carry net base/tax amounts from the
+    # source. Keep them in XML and do not count them again in F42.
+    down_payment_line_ids = {
+        line["l01_line_id"] for line in lines
+        if line["l22_line_basis_amount"] < 0
+        and not (
+            line["l26_line_allowance_charge_ind"] == "false"
+            and line["l27_line_allowance_actual_amount"] > 0
+        )
+    }
     down_payment_amount = abs(sum(
-        line.get("l22_line_basis_amount", 0) for line in lines if line.get("l22_line_basis_amount", 0) < 0
+        line["l22_line_basis_amount"] for line in lines
+        if line["l01_line_id"] in down_payment_line_ids
     ))
-    # filter out negative l22_line_basis_amount from lines
-    lines = [line for line in lines if line["l22_line_basis_amount"] >= 0]
+    lines = [line for line in lines if line["l01_line_id"] not in down_payment_line_ids]
 
     # --
     footer = {
