@@ -231,15 +231,23 @@ def prepare_data(d, ft, fm, pdf):
     base_total = round(base_total, 2)
     tax_total = round(tax_total, 2)
 
-    # Total down payment
+    # Explicit line allowances remain item-level deductions. Their signed
+    # amounts already contributed to the totals above; only legacy unmarked
+    # negative lines represent footer deposits.
+    signed_item_deposit_total = sum(
+        -line["l22_line_basis_amount"] for line in lines
+        if _is_signed_item_allowance(line)
+    )
+    # Total footer down payment
     down_payment_amount = abs(sum(
         line.get("l22_line_basis_amount", 0) for line in lines if line.get("l22_line_basis_amount", 0) < 0
+        and not _is_signed_item_allowance(line)
     ))
     # Capture F38 before deducting the footer discount. Line amounts already
     # include item discounts and deposits, but not the new footer allowance.
     subtotal = (
         round(line_total + down_payment_amount, 2)
-        if item_deposit_total or down_payment_amount or footer_discount
+        if item_deposit_total or signed_item_deposit_total or down_payment_amount or footer_discount
         else round(d["final_amount_untaxed"], 2) or 0.00
     )
     if footer_discount:
@@ -270,7 +278,19 @@ def prepare_data(d, ft, fm, pdf):
         tax_total = round(tax_total - discount_tax, 2)
         tax.update(base_amount=base_total, tax_amount=tax_total)
 
-    # filter out negative l22_line_basis_amount from lines
+    # Render signed item allowances using the workbook's zero-value row.
+    # Do this AFTER summing the signed amounts so supplied VAT rounding is
+    # preserved and the allowance is deducted exactly once.
+    for line in lines:
+        if _is_signed_item_allowance(line):
+            for key in (
+                "l10_product_charge_amount", "l22_line_basis_amount",
+                "l24_line_tax_cal_amount", "l31_line_tax_total_amount",
+                "l33_line_net_total_amount", "l35_line_net_include_tax_total_amount",
+            ):
+                line[key] = 0.0
+            line["l17_product_quantity"] = 1
+    # Only legacy footer-deposit rows are removed from the displayed items.
     lines = [line for line in lines if line["l22_line_basis_amount"] >= 0]
     for index, line in enumerate(lines, 1):
         line["l01_line_id"] = str(index)
@@ -404,8 +424,8 @@ def _item_deposit_amount(line):
     """Return the allowance on the workbook's zero-value deposit line.
 
     Ordinary discounted items already contain their net amounts and must not
-    have their allowance deducted again. Negative lines use the existing
-    document-level down-payment path instead.
+    have their allowance deducted again. Signed lines are summed directly;
+    explicit allowances are normalized for display only after totaling.
     """
     if (
         line["l26_line_allowance_charge_ind"] == "false"
@@ -422,3 +442,18 @@ def _item_deposit_amount(line):
     ):
         return line["l27_line_allowance_actual_amount"]
     return 0
+
+
+def _is_signed_item_allowance(line):
+    """Distinguish an explicit signed line allowance from a legacy footer deposit."""
+    if (
+        line["l22_line_basis_amount"] < 0
+        and line["l26_line_allowance_charge_ind"] == "false"
+        and line["l27_line_allowance_actual_amount"] > 0
+    ):
+        if round(line["l27_line_allowance_actual_amount"], 2) != round(
+            -line["l22_line_basis_amount"], 2
+        ):
+            raise ValueError(_("Signed line allowance must equal its negative basis amount."))
+        return True
+    return False
