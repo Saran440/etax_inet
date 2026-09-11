@@ -243,6 +243,14 @@ def prepare_data(d, ft, fm, pdf):
         line.get("l22_line_basis_amount", 0) for line in lines if line.get("l22_line_basis_amount", 0) < 0
         and not _is_signed_item_allowance(line)
     ))
+    # F42 reports every deduction, including allowances already reflected in
+    # the line amounts. Do not subtract this summary from the tax basis again.
+    # Signed/zero-value item deposits carry L27; legacy footer deposits do not.
+    item_allowance_total = sum(
+        line["l27_line_allowance_actual_amount"] for line in lines
+        if line["l26_line_allowance_charge_ind"] == "false"
+        and line["l27_line_allowance_actual_amount"] > 0
+    )
     # Capture F38 before deducting the footer discount. Line amounts already
     # include item discounts and deposits, but not the new footer allowance.
     subtotal = (
@@ -343,7 +351,9 @@ def prepare_data(d, ft, fm, pdf):
         "f39_line_total_currency_code": currency_code or "",
         "f40_adjusted_information_amount": round(d["adjust_amount_untaxed"], 2) or 0.00,   # doc._get_additional_amount()[2],
         "f41_adjusted_information_currency_code": currency_code or "",
-        "f42_allowance_total_amount": round(down_payment_amount + footer_discount, 2) or 0.00,
+        "f42_allowance_total_amount": round(
+            item_allowance_total + down_payment_amount + footer_discount, 2
+        ) or 0.00,
         "f43_allowance_total_currency_code": currency_code or "",
         "f44_charge_total_amount": "",
         "f45_charge_total_currency_code": currency_code or "",
